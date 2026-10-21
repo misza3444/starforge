@@ -1,0 +1,63 @@
+// Copyright © 2008-2026 Pioneer Developers. See AUTHORS.txt for details
+// Licensed under the terms of the GPL v3. See licenses/GPL-3.txt
+
+#ifndef _SCENEGRAPH_THRUSTER_H
+#define _SCENEGRAPH_THRUSTER_H
+/*
+ * Spaceship thruster
+ */
+
+#include "Node.h"
+
+namespace Graphics {
+	class Renderer;
+	class Material;
+	class MeshObject;
+	class RenderState;
+} // namespace Graphics
+
+namespace SceneGraph {
+
+	class Thruster : public Node {
+	public:
+		Thruster(Graphics::Renderer *, bool linear, const vector3f &pos, const vector3f &dir);
+		Thruster(const Thruster &, NodeCopyCache *cache = 0);
+		Node *Clone(NodeCopyCache *cache = 0) override;
+		void Accept(NodeVisitor &v) override;
+		const char *GetTypeName() const override { return "Thruster"; }
+		void Render(const matrix4x4f &trans, const RenderData *rd) override;
+		void Save(NodeDatabase &) override;
+		static Thruster *Load(NodeDatabase &);
+		void SetColor(const Color c) { currentColor = c; }
+		const vector3f &GetDirection() const { return dir; }
+		bool IsLinearOnly() const { return linearOnly; }
+		float ComputeReactionPower(const vector3f &linThrust, const vector3f &angThrust) const;
+		void SetVisualSizeInfo(float size, float sizeProportional)
+		{
+			visualSize = size;
+			visualSizeScaled = sizeProportional;
+		}
+		float GetVisualSize() const { return visualSize; }
+		float GetVisualSizeProportional() const { return visualSizeScaled; }
+
+	private:
+		// thruster geometry is shared between all instances of Thruster
+		// TODO: load this as a model to allow customization
+		static void CreateThrusterGeometry(Graphics::Renderer *);
+		static RefCountedPtr<Graphics::MeshObject> s_thrustMesh;
+		static RefCountedPtr<Graphics::MeshObject> s_glowMesh;
+
+		RefCountedPtr<Graphics::Material> m_tMat;
+		RefCountedPtr<Graphics::Material> m_glowMat;
+		bool linearOnly;
+		vector3f dir;
+		vector3f pos;
+		Color currentColor;
+		float visualSize; // The size that the thruster appears on the 3D model at full power
+		float visualSizeScaled; // visualSize scaled by the largest thruster on the 3D model (i.e. the largest thruster has visualSizeScaled = 1.0)
+		float displayedPower; // used to fade in/out to power (size) of thruster shown
+	};
+
+} // namespace SceneGraph
+
+#endif

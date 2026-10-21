@@ -1,0 +1,209 @@
+# Test all pull requests to ensure they build
+
+name: Build Pioneer
+
+# Controls when the action will run.
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    paths:
+    - 'src/**.cpp'
+    - 'src/**.h'
+    - '**/CMakeLists.txt'
+    - '.github/workflows/build-ci.yml'
+    - '.github/actions/*/action.yml'
+    - 'cmake/*.cmake'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: The release tag name to update
+        default: ''
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
+
+env:
+  packages: >
+    mesa-common-dev
+    libfreeimage-dev
+    libglew-dev
+    libsigc++-2.0-dev
+    libvorbis-dev
+    libassimp-dev
+    libsdl2-dev
+    libsdl2-image-dev
+    libopenal-dev
+    ninja-build
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+
+  build-msvc:
+    runs-on: windows-2022
+
+    steps:
+    - name: Install Dependencies
+      run: |
+        choco install gawk -y
+
+    - uses: actions/checkout@v6
+      with:
+        path: pioneer
+
+    - name: Checkout pioneer-thirdparty
+      uses: actions/checkout@v6
+      with:
+        repository: pioneerspacesim/pioneer-thirdparty
+        path: pioneer-thirdparty
+
+    - name: Build MSVC
+      shell: cmd
+      run: |
+        for /f %%i in ('echo ${{ github.ref }} ^| awk -F "/" "/pull/ { print \"PR#\"$3 } /heads/ { print $3 }"') do set PROJECT_VERSION_INFO=%%i
+        echo Project Version: %PROJECT_VERSION_INFO%
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        cd pioneer
+        mkdir build
+        cd build
+        cmake .. -G Ninja -DCMAKE_INSTALL_PREFIX="C:/Program Files/Pioneer" -DPIONEER_DATA_DIR="C:/Program Files/Pioneer/data" -DCMAKE_BUILD_TYPE:STRING=Release -DGIT_EXECUTABLE="c:/Program Files/Git/cmd/git.exe" -DPROJECT_VERSION_INFO="%PROJECT_VERSION_INFO%"
+        cmake --build .
+
+    - name: Build Pioneer Data
+      shell: cmd
+      run: |
+        cd pioneer
+        modelcompiler.exe -b inplace
+
+    - name: Build Release
+      shell: cmd
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        cd pioneer
+        cd build
+        cmake --build . --target install
+        cmake --build . --target win-installer
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: Windows-Artifacts
+        path: pioneer/pioneer-*-win.exe
+        retention-days: 14
+        archive: false
+
+    - name: Upload Release Files
+      uses: softprops/action-gh-release@v3
+      if: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
+      with:
+        files: pioneer/pioneer-*-win.exe
+        tag_name: ${{ inputs.tag_name || github.ref_name }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-gcc:
+    runs-on: ubuntu-22.04
+
+    steps:
+    # Checkout the repository as $GITHUB_WORKSPACE
+    - uses: actions/checkout@v6
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-fast update
+        sudo apt-fast install -y ${{ env.packages }}
+
+    - name: Setup CMake
+      run: |
+        echo "Project Version: $(echo "${{ github.ref }}" | awk -F '/' '/pull/ { print "PR#"$3 } /heads/ { print $3 }')"
+        cp scripts/CMakeBuildPresetsCI.json CMakeUserPresets.json
+        cmake -G Ninja --preset linux-x64-release -DPROJECT_VERSION_INFO=$(echo "${{ github.ref }}" | awk -F '/' '/pull/ { print "PR#"$3 } /heads/ { print $3 }')
+
+    - name: Build GCC
+      run: cmake --build ./build --target all
+
+    - name: Build Pioneer Data
+      run: cmake --build ./build --target build-data
+
+    - name: Run Tests
+      run: ./build/unittest
+
+    - name: Generate Artifacts
+      uses: ./.github/actions/upload-linux
+      with:
+        artifact_name: Linux 64-bit
+        build_slug: linux-x64-release
+        token: ${{ secrets.GITHUB_TOKEN }}
+        upload_release: true
+        tag_name: ${{ inputs.tag_name }}
+
+  build-clang:
+    runs-on: ubuntu-22.04
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+
+    # Checkout the repository as $GITHUB_WORKSPACE
+    - uses: actions/checkout@v6
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-fast update
+        sudo apt-fast install -y clang-12 ${{ env.packages }}
+
+    - name: Setup CMake
+      run: |
+        echo "Project Version: $(echo "${{ github.ref }}" | awk -F '/' '/pull/ { print "PR#"$3 } /heads/ { print $3 }')"
+        cp scripts/CMakeBuildPresetsCI.json CMakeUserPresets.json
+        export CC=clang CXX=clang++
+        cmake -G Ninja --preset linux-x64-release -DPROJECT_VERSION_INFO=$(echo "${{ github.ref }}" | awk -F '/' '/pull/ { print "PR#"$3 } /heads/ { print $3 }')
+
+    - name: Build Clang
+      run: cmake --build ./build --target all
+
+    - name: Build Pioneer Data
+      run: cmake --build ./build --target build-data
+
+    - name: Run Tests
+      run: ./build/unittest
+
+  build-appimage:
+    runs-on: ubuntu-22.04
+    if: ${{github.event_name == 'release' || github.event_name == 'workflow_dispatch'}}
+    steps:
+    # Checkout the repository as $GITHUB_WORKSPACE
+    - uses: actions/checkout@v6
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-fast update
+        sudo apt-fast install -y ${{ env.packages }}
+
+    - name: Setup CMake
+      run: |
+        cp scripts/CMakeBuildPresetsCI.json CMakeUserPresets.json
+        cmake -G Ninja --preset linux-x64-release-appimage
+
+    - name: Build GCC
+      run: cmake --build ./build --target all
+
+    - name: Build Pioneer Data
+      run: cmake --build ./build --target build-data
+
+    - name: Run Tests
+      run: ./build/unittest
+
+    - name: Generate Artifacts
+      uses: ./.github/actions/upload-appimage
+      with:
+        artifact_name: Linux 64-bit Appimage
+        build_slug: linux-x64-release-appimage
+        token: ${{ secrets.GITHUB_TOKEN }}
+        upload_release: true
+        tag_name: ${{ inputs.tag_name }}

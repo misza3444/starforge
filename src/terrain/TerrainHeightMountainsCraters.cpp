@@ -1,0 +1,58 @@
+// Copyright © 2008-2026 Pioneer Developers. See AUTHORS.txt for details
+// Licensed under the terms of the GPL v3. See licenses/GPL-3.txt
+
+#include "Terrain.h"
+#include "TerrainFeature.h"
+#include "TerrainNoise.h"
+
+using namespace TerrainNoise;
+using namespace TerrainFeature;
+
+template <>
+const char *TerrainHeightFractal<TerrainHeightMountainsCraters>::GetHeightFractalName() const { return "MountainsCraters"; }
+
+template <>
+TerrainHeightFractal<TerrainHeightMountainsCraters>::TerrainHeightFractal(const SystemBody *body) :
+	Terrain(body)
+{
+	SetFracDef(0, m_maxHeightInMeters, m_rand.Double(1e6, 1e7));
+	double height = m_maxHeightInMeters * 0.3;
+	SetFracDef(1, height, m_rand.Double(4.0, 20.0) * height);
+	SetFracDef(2, m_maxHeightInMeters, m_rand.Double(50.0, 100.0) * m_maxHeightInMeters);
+
+	height = m_maxHeightInMeters * 0.3;
+	SetFracDef(4, m_maxHeightInMeters, m_rand.Double(100.0, 200.0) * m_maxHeightInMeters);
+	SetFracDef(3, height, m_rand.Double(2.5, 3.5) * height);
+
+	SetFracDef(5, m_maxHeightInMeters * 0.05, 8e5, 1000.0);
+	SetFracDef(6, m_maxHeightInMeters * 0.05, 1e6, 10000.0);
+}
+
+template <>
+void TerrainHeightFractal<TerrainHeightMountainsCraters>::GetHeights(const vector3d *vP, double *heightsOut, const size_t count) const
+{
+	for (size_t i = 0; i < count; i++) {
+		const vector3d &p = vP[i];
+		double continents = octavenoise(m_fracdef[0], 0.5, p) - m_sealevel;
+		if (continents < 0.0) {
+			heightsOut[i] = 0.0;
+			continue;
+		}
+		double n = 0.3 * continents;
+
+		double m = m_fracdef[1].amplitude * ridged_octavenoise(m_fracdef[1], 0.5, p);
+		double distrib = ridged_octavenoise(m_fracdef[4], 0.5, p);
+		if (distrib > 0.5) m += 2.0 * (distrib - 0.5) * m_fracdef[3].amplitude * ridged_octavenoise(m_fracdef[3], 0.5 * distrib, p);
+
+		// cliffs at shore
+		if (continents < 0.001)
+			n += m * continents * 1000.0f;
+		else
+			n += m;
+
+		n += crater_function(m_fracdef[5], p);
+		n += crater_function(m_fracdef[6], p);
+		n *= m_maxHeight;
+		heightsOut[i] = (n > 0.0 ? n : 0.0);
+	}
+}

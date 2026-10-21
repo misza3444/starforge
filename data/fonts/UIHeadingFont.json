@@ -1,0 +1,21 @@
+{
+	"name": "orbiteer",
+	"loadDefaultRange": true,
+	"faces": [
+		{
+			"fontFile": "Orbiteer-Bold.ttf",
+			"scale": 1.0
+	  	},
+		{
+			"fontFile": "DejaVuSans.ttf",
+			"scale": 1.2
+	  	},
+		{
+			"fontFile": "wqy-microhei.ttc",
+			"scale": 1.0
+	  	},
+		{
+			"iconFile": "icons/icons.icondef"
+		}
+   ]
+}

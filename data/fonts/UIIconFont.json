@@ -1,0 +1,13 @@
+{
+	"name": "icons",
+	"loadDefaultRange": false,
+	"faces": [
+		{
+			"fontFile": "PionilliumText22L-Medium.ttf",
+			"scale": 1.0
+		},
+		{
+			"iconFile": "icons/icons.icondef"
+		}
+	]
+}
