@@ -48,8 +48,38 @@ namespace FileSystem {
 		return transcode_utf16_to_utf8(buf, len);
 	}
 
+	// STARFORGE: activate portable storage only when the marker is beside the EXE.
+	// Resolve against the executable itself, not the working directory.
+	static bool FindPortableRoot(std::wstring &root)
+	{
+		wchar_t executable[MAX_PATH] = {};
+		const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
+		if (length == 0 || length >= MAX_PATH || !PathRemoveFileSpecW(executable))
+			return false;
+
+		const std::wstring marker = std::wstring(executable) + L"\\portable.flag";
+		const DWORD attributes = GetFileAttributesW(marker.c_str());
+		if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY))
+			return false;
+
+		root = executable;
+		return true;
+	}
+
 	static std::string FindUserDir()
 	{
+		std::wstring portable_root;
+		if (FindPortableRoot(portable_root)) {
+			const std::wstring path = portable_root + L"\\userdata";
+			if (!PathFileExistsW(path.c_str())) {
+				if (SHCreateDirectoryExW(nullptr, path.c_str(), nullptr) != ERROR_SUCCESS) {
+					Output("Unable to create portable user data directory: %s\\n", transcode_utf16_to_utf8(path).c_str());
+					exit(-1);
+				}
+			}
+			return transcode_utf16_to_utf8(path);
+		}
+
 		wchar_t appdata_path[MAX_PATH];
 		if (SHGetFolderPathW(0, CSIDL_PERSONAL, 0, SHGFP_TYPE_CURRENT, appdata_path) != S_OK) {
 			Output("Couldn't get user documents folder path\n");
@@ -72,6 +102,10 @@ namespace FileSystem {
 
 	static std::string FindDataDir()
 	{
+		std::wstring portable_root;
+		if (FindPortableRoot(portable_root))
+			return transcode_utf16_to_utf8(portable_root + L"\\data");
+
 		static const DWORD BUFSIZE = MAX_PATH + 1;
 		wchar_t buf[BUFSIZE];
 		memset(buf, L'\0', sizeof(wchar_t) * BUFSIZE); // clear the buffer
