@@ -1,0 +1,68 @@
+name: STARFORGE Windows Portable
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'data/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/starforge-portable.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pioneer
+      - uses: actions/checkout@v4
+        with:
+          repository: pioneerspacesim/pioneer-thirdparty
+          path: pioneer-thirdparty
+      - name: Configure and compile
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd pioneer
+          mkdir build
+          cd build
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DPIONEER_INSTALL_INPLACE=ON -DCMAKE_INSTALL_PREFIX="%GITHUB_WORKSPACE%\portable" -DPROJECT_VERSION_INFO=STARFORGE
+          cmake --build . --config Release --parallel 4
+      - name: Compile existing ship models
+        shell: pwsh
+        run: |
+          Set-Location pioneer
+          .\modelcompiler.exe -b inplace
+          if ($LASTEXITCODE -ne 0) { throw "Model compilation failed" }
+      - name: Install to portable directory
+        shell: pwsh
+        run: |
+          cmake --install pioneer/build --config Release
+          if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
+          $dir = Join-Path $env:GITHUB_WORKSPACE 'portable'
+          if (!(Test-Path (Join-Path $dir 'pioneer.exe'))) { throw "Missing game EXE" }
+          if (!(Test-Path (Join-Path $dir 'data'))) { throw "Missing game data" }
+          if (!(Test-Path (Join-Path $dir 'licenses'))) { throw "Missing licenses" }
+          New-Item -ItemType File -Path (Join-Path $dir 'portable.flag') -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $dir 'userdata') -Force | Out-Null
+          Set-Content -Path (Join-Path $dir 'README-STARFORGE.txt') -Value @(
+            'STARFORGE Portable (Pioneer-based development build)'
+            'Run pioneer.exe from this folder.'
+            'Saved games and configuration: userdata folder.'
+            'Preserve licenses and original author credits.'
+          )
+          Rename-Item (Join-Path $dir 'pioneer.exe') 'STARFORGE.exe'
+          $exe = Join-Path $dir 'STARFORGE.exe'
+          if (!(Test-Path $exe)) { throw "Missing STARFORGE.exe" }
+          Compress-Archive -Path (Join-Path $dir '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'STARFORGE-Windows-x64-Portable.zip') -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STARFORGE-Windows-x64-Portable
+          path: STARFORGE-Windows-x64-Portable.zip
+          if-no-files-found: error
+          retention-days: 14
