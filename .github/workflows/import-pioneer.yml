@@ -1,0 +1,51 @@
+name: Import Pioneer upstream snapshot
+on:
+  push:
+    paths:
+      - '.github/workflows/import-pioneer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-pioneer-upstream
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out STARFORGE repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Download upstream Pioneer release (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch 20260907 \
+            https://github.com/pioneerspacesim/pioneer.git \
+            "$RUNNER_TEMP/pioneer-upstream"
+          actual_sha="$(git -C "$RUNNER_TEMP/pioneer-upstream" rev-parse HEAD)"
+          expected_sha="824ea0318b0843e74d108022e7b81de1fec0dcbf"
+          test "$actual_sha" = "$expected_sha"
+          echo "Upstream snapshot verified: $actual_sha"
+
+      - name: Copy complete upstream working tree into STARFORGE
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync --archive --delete --exclude='.git' \
+            "$RUNNER_TEMP/pioneer-upstream/" "$GITHUB_WORKSPACE/"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'Nothing to import'; exit 0; }
+          git commit -m "Import Pioneer 2026-09-07 into STARFORGE" \
+            -m "Upstream: https://github.com/pioneerspacesim/pioneer" \
+            -m "Tag: 20260907" \
+            -m "Commit: 824ea0318b0843e74d108022e7b81de1fec0dcbf"
+          git push origin HEAD:main
