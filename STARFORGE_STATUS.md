@@ -23,4 +23,5 @@ All future game development and repository changes take place only in STARFORGE.
 - Artifact ID: 12381229642
 - Artifact size: 685227995 bytes; archive is wrapped by GitHub Actions artifact packaging.
 - Expiry: 2026-11-04 UTC (14-day retention).
-- Manual Windows launch and save/load smoke testing remain to be performed.
+- Manual Windows launch: confirmed working by the user on 2026-10-22.
+- Save/load smoke testing: not yet confirmed by the user.
